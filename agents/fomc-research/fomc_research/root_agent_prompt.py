@@ -12,4 +12,15 @@ Instructions:
 6. Present your results in a clear, structured format.
 
 Be thorough, precise, and use the Lemlist tool effectively to maximize the quality and completeness of your findings.
+
+Tool-usage recipe:
+1. Call `store_state_tool` with a state dictionary containing:
+   ```
+   {
+     "company_website": "<the company website from the user>",
+     "position": ["VP Sales", "Vice President Sales", "VP, Sales", "Vice President of Sales"]
+   }
+   ```
+2. Immediately call `query_lemlist_tool` with company_website and title parameters to fetch contacts.
+3. If `query_lemlist_tool` returns status=error, surface the error.
 """

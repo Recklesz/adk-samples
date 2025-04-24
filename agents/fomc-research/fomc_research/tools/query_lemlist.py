@@ -3,51 +3,49 @@
 
 import logging
 import os
+from typing import Optional, List
 
 import requests
 from google.adk.tools import ToolContext
 
 logger = logging.getLogger(__name__)
 
-def query_lemlist_tool(tool_context: ToolContext) -> dict[str, str]:
+def query_lemlist_tool(company_website: Optional[str] = None, title: Optional[List[str]] = None, page: Optional[int] = None, size: Optional[int] = None, tool_context: Optional[ToolContext] = None) -> dict[str, str]:
     """Queries Lemlist People Database API for contacts using various filters.
 
     This tool uses the Lemlist People Database API to search for contacts using various filters.
-    It supports multiple filtering options including company name, company website URL, and job title.
+    It searches for contacts at a specific company website with specific job titles.
 
-    Expected state keys:
-      company_name: (optional) Name of the company to filter contacts.
-      company_website: (optional) Website URL of the company to filter contacts.
-      position: (optional) Job title/position to filter contacts.
-      limit: (optional) number of results per page (default 20).
-      page: (optional) page number to retrieve (default 1).
-      filter_id: (optional) override the default filter ID for company (default "currentCompany").
-      additional_filters: (optional) list of additional filter dictionaries to include in the request.
-
-    Notes:
-      At least one of company_name or company_website should be provided.
-      When both are provided, company_name takes precedence unless filter_id is specified.
+    Args:
+      company_website: Website URL of the company to filter contacts. If not provided, will use tool_context.state["company_website"].
+      title: List of job titles/positions to filter contacts (e.g. ["VP Sales", "Vice President Sales"]). If not provided, will use tool_context.state["position"].
+      page: Page number to retrieve (default 1).
+      size: Number of results per page (default 20).
+      tool_context: ToolContext object.
 
     Returns:
       A dict with "status" and optional "error_message" keys.
       On success, the tool_context.state will be updated with a "lemlist_people" key
       containing the list of contacts found.
     """
-    # Get filtering parameters
-    company_name = tool_context.state.get("company_name")
-    company_website = tool_context.state.get("company_website")
+    # Get parameters from direct args or tool_context
+    if tool_context:
+        company_website = company_website or tool_context.state.get("company_website")
+        title = title or tool_context.state.get("position")
+        page = page or tool_context.state.get("page", 1)
+        size = size or tool_context.state.get("limit", 20)
+    else:
+        # Default values if no tool_context
+        page = page or 1
+        size = size or 20
     
-    # Ensure we have at least one filter criteria
-    if not company_name and not company_website:
-        logger.error("Missing filter criteria: need either company_name or company_website in state")
+    # Ensure we have company website
+    if not company_website:
+        logger.error("Missing company website parameter")
         return {
             "status": "error", 
-            "error_message": "Missing filter criteria: need either company_name or company_website in state"
+            "error_message": "Missing company website parameter"
         }
-
-    # Get page and size (renamed from limit to match API docs)
-    size = tool_context.state.get("limit", 20)
-    page = tool_context.state.get("page", 1)
 
     api_key = os.getenv("LEMLIST_API_KEY")
     if not api_key:
@@ -66,39 +64,20 @@ def query_lemlist_tool(tool_context: ToolContext) -> dict[str, str]:
     # Set up the filters list
     filters = []
     
-    # Determine which company filter to use
-    if company_name:
-        # Add company name filter
-        filter_id = "currentCompany"  # Default filter ID for company name
-        
-        # Check if a specific filter ID was provided in the state (for testing or advanced usage)
-        if "filter_id" in tool_context.state:
-            filter_id = tool_context.state["filter_id"]
-            logger.info("Using custom filter ID from state: %s", filter_id)
-        
-        # Add the company name filter
-        filters.append({
-            "filterId": filter_id,
-            "in": [company_name],
-            "out": []
-        })
-        logger.info("Added company name filter: %s", company_name)
-    elif company_website:
-        # Add company website filter
-        filters.append({
-            "filterId": "currentCompanyWebsiteUrl",
-            "in": [company_website],
-            "out": []
-        })
-        logger.info("Added company website filter: %s", company_website)
+    # Add company website filter
+    filters.append({
+        "filterId": "currentCompanyWebsiteUrl",
+        "in": [company_website],
+        "out": []
+    })
+    logger.info("Added company website filter: %s", company_website)
     
     # Add position/title filter if provided
-    position = tool_context.state.get("position")
-    if position:
-        logger.info("Adding position filter: %s", position)
+    if title:
+        logger.info("Adding position filter with multiple titles: %s", title)
         filters.append({
             "filterId": "currentTitle",
-            "in": [position],
+            "in": title,
             "out": []
         })
     
@@ -117,7 +96,7 @@ def query_lemlist_tool(tool_context: ToolContext) -> dict[str, str]:
 
     logger.info(
         "Querying Lemlist People Database API for company: %s, size: %s, page: %s",
-        company_name, size, page,
+        company_website, size, page,
     )
     
     # Log the request details
@@ -126,13 +105,11 @@ def query_lemlist_tool(tool_context: ToolContext) -> dict[str, str]:
     logger.info("Request body: %s", request_body)
     
     try:
-        # Make the POST request with Basic Auth (empty username, API key as password)
-        # This matches the documentation example
         response = requests.post(
-            url, 
-            headers=headers, 
-            json=request_body,  # Send as JSON body
-            auth=("", api_key),  # Basic Auth with empty username and API key as password
+            url,
+            auth=("", api_key),  # Lemlist uses the API key as the password with empty username
+            headers=headers,
+            json=request_body,
             timeout=10
         )
         
@@ -180,7 +157,7 @@ def query_lemlist_tool(tool_context: ToolContext) -> dict[str, str]:
             # Log the number of available fields for reference
             logger.info("Number of available fields in contact data: %d", len(sample_contact.keys()))
         else:
-            logger.info("No contacts found for company: %s", company_name)
+            logger.info("No contacts found for company website: %s", company_website)
     
         # Store the contacts in the tool context state
         tool_context.state.update({"lemlist_people": contacts})
