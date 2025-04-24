@@ -36,15 +36,14 @@ root_agent = Agent(
     model=MODEL,
     name="root_agent",
     description=(
-        "Use tools and other agents provided to generate an analysis report"
-        "about the most recent FMOC meeting."
+        "You are a prospecting assistant. Your job is to find as much as possible about a company based on their description."
     ),
     instruction=root_agent_prompt.PROMPT,
-    tools=[store_state_tool],
-    sub_agents=[
-        RetrieveMeetingDataAgent,
-        ResearchAgent,
-        AnalysisAgent,
-    ],
+    # tools=[store_state_tool],
+    # sub_agents=[
+    #     RetrieveMeetingDataAgent,
+    #     ResearchAgent,
+    #     AnalysisAgent,
+    # ],
     before_model_callback=rate_limit_callback,
 )
