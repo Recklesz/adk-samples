@@ -23,27 +23,40 @@ from google.adk.tools import ToolContext
 logger = logging.getLogger(__name__)
 
 def query_lemlist_tool(tool_context: ToolContext) -> dict[str, str]:
-    """Queries Lemlist People Database API for contacts by company name.
+    """Queries Lemlist People Database API for contacts using various filters.
 
-    This tool uses the Lemlist People Database API to search for contacts by company name.
-    It uses the "currentCompany" filter ID, which was confirmed to be the correct filter
-    for searching by company name through API testing.
+    This tool uses the Lemlist People Database API to search for contacts using various filters.
+    It supports multiple filtering options including company name, company website URL, and job title.
 
     Expected state keys:
-      company_name: Name of the company to filter contacts.
+      company_name: (optional) Name of the company to filter contacts.
+      company_website: (optional) Website URL of the company to filter contacts.
+      position: (optional) Job title/position to filter contacts.
       limit: (optional) number of results per page (default 20).
       page: (optional) page number to retrieve (default 1).
-      filter_id: (optional) override the default filter ID (default "currentCompany").
+      filter_id: (optional) override the default filter ID for company (default "currentCompany").
+      additional_filters: (optional) list of additional filter dictionaries to include in the request.
+
+    Notes:
+      At least one of company_name or company_website should be provided.
+      When both are provided, company_name takes precedence unless filter_id is specified.
 
     Returns:
       A dict with "status" and optional "error_message" keys.
       On success, the tool_context.state will be updated with a "lemlist_people" key
       containing the list of contacts found.
     """
+    # Get filtering parameters
     company_name = tool_context.state.get("company_name")
-    if not company_name:
-        logger.error("Missing company_name in state")
-        return {"status": "error", "error_message": "Missing company_name in state"}
+    company_website = tool_context.state.get("company_website")
+    
+    # Ensure we have at least one filter criteria
+    if not company_name and not company_website:
+        logger.error("Missing filter criteria: need either company_name or company_website in state")
+        return {
+            "status": "error", 
+            "error_message": "Missing filter criteria: need either company_name or company_website in state"
+        }
 
     # Get page and size (renamed from limit to match API docs)
     size = tool_context.state.get("limit", 20)
@@ -63,23 +76,54 @@ def query_lemlist_tool(tool_context: ToolContext) -> dict[str, str]:
         "Accept": "application/json"
     }
     
-    # Set up the request body with filters as per our API test results
-    # The correct filter ID for company name is "currentCompany" as confirmed by our API tests
-    filter_id = "currentCompany"
+    # Set up the filters list
+    filters = []
     
-    # Check if a specific filter ID was provided in the state (for testing or advanced usage)
-    if "filter_id" in tool_context.state:
-        filter_id = tool_context.state["filter_id"]
-        logger.info("Using custom filter ID from state: %s", filter_id)
+    # Determine which company filter to use
+    if company_name:
+        # Add company name filter
+        filter_id = "currentCompany"  # Default filter ID for company name
+        
+        # Check if a specific filter ID was provided in the state (for testing or advanced usage)
+        if "filter_id" in tool_context.state:
+            filter_id = tool_context.state["filter_id"]
+            logger.info("Using custom filter ID from state: %s", filter_id)
+        
+        # Add the company name filter
+        filters.append({
+            "filterId": filter_id,
+            "in": [company_name],
+            "out": []
+        })
+        logger.info("Added company name filter: %s", company_name)
+    elif company_website:
+        # Add company website filter
+        filters.append({
+            "filterId": "currentCompanyWebsiteUrl",
+            "in": [company_website],
+            "out": []
+        })
+        logger.info("Added company website filter: %s", company_website)
     
+    # Add position/title filter if provided
+    position = tool_context.state.get("position")
+    if position:
+        logger.info("Adding position filter: %s", position)
+        filters.append({
+            "filterId": "currentTitle",
+            "in": [position],
+            "out": []
+        })
+    
+    # Add any additional filters from state
+    additional_filters = tool_context.state.get("additional_filters", [])
+    if additional_filters:
+        logger.info("Adding %d additional filters", len(additional_filters))
+        filters.extend(additional_filters)
+    
+    # Create the request body
     request_body = {
-        "filters": [
-            {
-                "filterId": filter_id,
-                "in": [company_name],
-                "out": []
-            }
-        ],
+        "filters": filters,
         "page": page,
         "size": size
     }

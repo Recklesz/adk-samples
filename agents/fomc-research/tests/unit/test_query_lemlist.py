@@ -59,7 +59,10 @@ class TestQueryLemlistTool(unittest.TestCase):
 
     @mock.patch("fomc_research.tools.query_lemlist.requests.post")
     def test_successful_api_call(self, mock_post):
-        """Test a successful API call with valid parameters."""
+        """Test a successful API call with valid parameters.
+        
+        Tests both a simple company name filter and a multi-filter query with position.
+        """
         # Set up mock response with a more comprehensive example of Lemlist API data
         mock_response = mock.MagicMock()
         expected_people = [
@@ -103,13 +106,53 @@ class TestQueryLemlistTool(unittest.TestCase):
         # Set up tool context state
         self.tool_context.state = {"company_name": "Example Corp"}
         
-        # Call the function
+        # Call the function for company name only
         result = query_lemlist_tool(self.tool_context)
         
         # Verify the result
         assert result == {"status": "ok"}, f"Expected status 'ok', got {result}"
         
-        # Verify the API was called with correct parameters
+        # Verify the API was called with correct parameters (company name only)
+        mock_post.assert_called_with(
+            "https://api.lemlist.com/api/database/people",
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            },
+            json={
+                "filters": [
+                    {
+                        "filterId": "currentCompany",
+                        "in": ["Example Corp"],
+                        "out": []
+                    }
+                ],
+                "page": 1,
+                "size": 20
+            },
+            auth=("", "test_api_key"),
+            timeout=10,
+        )
+        
+        # Reset the mock
+        mock_post.reset_mock()
+        
+        # Now test with both company name and position
+        self.tool_context.state = {
+            "company_name": "Example Corp",
+            "position": "CEO"
+        }
+        
+        # Set up mock response again
+        mock_post.return_value = mock_response
+        
+        # Call the function with position filter
+        result = query_lemlist_tool(self.tool_context)
+        
+        # Verify the result
+        assert result == {"status": "ok"}, f"Expected status 'ok', got {result}"
+        
+        # Verify the API was called with both filters
         mock_post.assert_called_once_with(
             "https://api.lemlist.com/api/database/people",
             headers={
@@ -121,6 +164,11 @@ class TestQueryLemlistTool(unittest.TestCase):
                     {
                         "filterId": "currentCompany",
                         "in": ["Example Corp"],
+                        "out": []
+                    },
+                    {
+                        "filterId": "currentTitle",
+                        "in": ["CEO"],
                         "out": []
                     }
                 ],

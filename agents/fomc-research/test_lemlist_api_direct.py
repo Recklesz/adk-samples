@@ -27,8 +27,9 @@ def test_lemlist_api():
     
     print(f"Using API key: {api_key[:5]}...{api_key[-3:]} (length: {len(api_key)})")
     
-    # Test company name
-    company_name = "Skylar"  # You can change this to any company you want to search for
+    # Test parameters
+    company_website = "attio.com"  # Company website URL to search for
+    position = "CEO"              # Position/title to search for
     
     # Common headers
     headers = {
@@ -90,16 +91,22 @@ def test_lemlist_api():
     # API endpoint for people search
     url = "https://api.lemlist.com/api/database/people"
     
-    # Based on the filters list, the correct filter ID for company name is "currentCompany"
-    correct_filter_id = "currentCompany"
-    print(f"\n--- Testing with the correct filter_id: {correct_filter_id} ---")
+    # Based on our API testing, we need to use multiple filters:
+    # - "currentCompanyWebsiteUrl" for company website URL
+    # - "currentTitle" for job title/position
+    print(f"\n--- Testing with multiple filters (company website: {company_website}, position: {position}) ---")
     
-    # Request body with the correct filter ID
+    # Request body with multiple filters
     request_body = {
         "filters": [
             {
-                "filterId": correct_filter_id,
-                "in": [company_name],
+                "filterId": "currentCompanyWebsiteUrl",
+                "in": [company_website],
+                "out": []
+            },
+            {
+                "filterId": "currentTitle",
+                "in": [position],
                 "out": []
             }
         ],
@@ -153,25 +160,34 @@ def test_lemlist_api():
     except requests.exceptions.RequestException as e:
         print(f"Request error: {e}")
     
-    print(f"--- End of test with filter_id: {correct_filter_id} ---\n")
+    print(f"--- End of test with multiple filters ---\n")
     
-    # Step 3: Try with a simpler request format
-    print("\n=== STEP 3: Testing with simpler request format ===\n")
+    # Step 3: Try with a simpler request format (just website URL)
+    print("\n=== STEP 3: Testing with just website URL filter ===\n")
     
-    simple_request_body = {
-        "filters": [],  # Empty filters array
+    # Making request with only the website URL filter
+    print(f"Making request with only website URL filter: {company_website}")
+    request_body = {
+        "filters": [
+            {
+                "filterId": "currentCompanyWebsiteUrl",
+                "in": [company_website],
+                "out": []
+            }
+        ],
         "page": 1,
         "size": 20
     }
     
-    print(f"Making request with empty filters array")
-    print(f"Request body: {json.dumps(simple_request_body, indent=2)}")
+    print(f"Request URL: {url}")
+    print(f"Request headers: {headers}")
+    print(f"Request body: {json.dumps(request_body, indent=2)}")
     
     try:
         response = requests.post(
             url, 
             headers=headers, 
-            json=simple_request_body,
+            json=request_body,
             auth=("", api_key),
             timeout=10
         )

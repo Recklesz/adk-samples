@@ -37,7 +37,11 @@ This document contains information about the Lemlist API integration for the CSV
 
 1. **Company Name Filter**: The correct filter ID for searching by company name is `currentCompany`, not `companyName`, `company`, or other variations.
 
-2. **Empty Filters**: The API does not accept empty filters array and will return a 400 error.
+2. **Company Website Filter**: To search by company website URL, use the `currentCompanyWebsiteUrl` filter ID.
+
+3. **Position/Title Filter**: To search by job title or position, use the `currentTitle` filter ID.
+
+4. **Empty Filters**: The API does not accept empty filters array and will return a 400 error.
 
 3. **Schema Endpoint**: The `/api/database/people/schema` endpoint returns HTML instead of JSON, suggesting it may be a web interface rather than an API endpoint.
 
@@ -94,7 +98,11 @@ The API returns the following error codes:
 
 ## Best Practices
 
-1. Always use the `currentCompany` filter ID for company name searches.
-2. Include proper error handling for API responses.
-3. Respect rate limits by checking the `x-ratelimit-*` headers.
-4. Store the API key securely in environment variables.
+1. Always use the correct filter IDs:
+   - `currentCompany` for company name searches
+   - `currentCompanyWebsiteUrl` for company website URL searches
+   - `currentTitle` for job title/position searches
+2. Combine multiple filters for more precise searches (e.g., company website + job title).
+3. Include proper error handling for API responses.
+4. Respect rate limits by checking the `x-ratelimit-*` headers.
+5. Store the API key securely in environment variables.
