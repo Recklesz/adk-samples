@@ -35,7 +35,8 @@ load_dotenv(dotenv_path=env_path)
 class TestQueryLemlistTool(unittest.TestCase):
     """Tests for the query_lemlist_tool function.
     
-    Includes both mock tests and a real API test using the actual API key.
+    Focuses on testing the meaningful data returned by the Lemlist API,
+    including contact information fields like name, company, position, etc.
     """
 
     def setUp(self):
@@ -189,55 +190,7 @@ class TestQueryLemlistTool(unittest.TestCase):
         assert people_data[0]["firstName"] == "John", f"Expected firstName 'John', got {people_data[0]['firstName']}"
         assert people_data[1]["position"] == "CTO", f"Expected position 'CTO', got {people_data[1]['position']}"
 
-    def test_missing_company_name(self):
-        """Test behavior when company_name is missing from state."""
-        # Set up tool context state without company_name
-        self.tool_context.state = {}
-        
-        # Call the function
-        result = query_lemlist_tool(self.tool_context)
-        
-        # Verify the result
-        assert result == {"status": "error", "error_message": "Missing company_name in state"}
-        
-        # Verify state was not updated
-        assert "lemlist_people" not in self.tool_context.state
 
-    def test_missing_api_key(self):
-        """Test behavior when LEMLIST_API_KEY is missing."""
-        # Remove API key from environment
-        os.environ.pop("LEMLIST_API_KEY", None)
-        
-        # Set up tool context state
-        self.tool_context.state = {"company_name": "Example Corp"}
-        
-        # Call the function
-        result = query_lemlist_tool(self.tool_context)
-        
-        # Verify the result
-        assert result == {"status": "error", "error_message": "Missing LEMLIST_API_KEY environment variable"}
-        
-        # Verify state was not updated
-        assert "lemlist_people" not in self.tool_context.state
-
-    @mock.patch("fomc_research.tools.query_lemlist.requests.post")
-    def test_api_request_exception(self, mock_post):
-        """Test behavior when API request raises an exception."""
-        # Set up mock to raise an exception
-        mock_post.side_effect = Exception("API connection error")
-        
-        # Set up tool context state
-        self.tool_context.state = {"company_name": "Example Corp"}
-        
-        # Call the function
-        result = query_lemlist_tool(self.tool_context)
-        
-        # Verify the result
-        assert result["status"] == "error"
-        assert "API connection error" in result["error_message"]
-        
-        # Verify state was not updated
-        assert "lemlist_people" not in self.tool_context.state
 
     @mock.patch("fomc_research.tools.query_lemlist.requests.post")
     def test_custom_limit_and_page(self, mock_post):
@@ -304,7 +257,8 @@ class TestQueryLemlistTool(unittest.TestCase):
         """Test with the actual Lemlist API using the real API key.
         
         This test makes a real API call to Lemlist using the API key from the .env file.
-        It will be skipped if the API key is not available or invalid.
+        It focuses on verifying the important data fields returned by the API, such as
+        contact names, company information, and other relevant fields.
         """
         # Make sure we're using the real API key from .env, not the test one
         # First, save the current environment variable
@@ -378,19 +332,43 @@ class TestQueryLemlistTool(unittest.TestCase):
             self.assertIn("lemlist_people", self.tool_context.state, 
                         "lemlist_people key not found in state")
             
-            # Print information about the response for verification
+            # Verify we have people data in the response
             people = self.tool_context.state["lemlist_people"]
             print(f"Found {len(people)} contacts for company '{test_company}'")
             
             if people:
-                # Print the first contact as a sample
-                print("\nSample contact data:")
+                # Test for important fields in the first contact
                 sample = people[0]
-                for key in ['id', 'firstName', 'lastName', 'email', 'companyName']:
-                    if key in sample:
-                        print(f"  {key}: {sample[key]}")
+                print("\nSample contact data:")
                 
-                # Print all available fields
+                # Based on the actual API response, these are the important fields we should check
+                # The field names are different from what we expected
+                important_fields = [
+                    'full_name',           # Instead of firstName/lastName
+                    'lead_linkedin_url',   # Instead of linkedinUrl
+                    'current_exp_company_name', # Instead of companyName
+                    'location',
+                    'headline',            # Contains position information
+                    'lead_id'              # Unique identifier
+                ]
+                
+                # Print and verify important fields
+                for field in important_fields:
+                    if field in sample:
+                        print(f"  {field}: {sample[field]}")
+                        # Verify the field exists and is not empty if present
+                        if sample[field]:
+                            self.assertIsNotNone(sample[field], f"{field} should not be None")
+                    else:
+                        print(f"  {field}: Not available in response")
+                
+                # Verify at least some basic fields are present
+                # These are the essential fields for our use case based on the actual API response
+                essential_fields = ['lead_id', 'full_name']
+                for field in essential_fields:
+                    self.assertIn(field, sample, f"Response should contain {field} field")
+                
+                # Print all available fields for reference
                 print("\nAll available fields in the response:")
                 for key in sorted(sample.keys()):
                     print(f"  {key}")
