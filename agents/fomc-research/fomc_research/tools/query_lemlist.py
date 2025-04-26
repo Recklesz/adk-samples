@@ -10,7 +10,7 @@ from google.adk.tools import ToolContext
 
 logger = logging.getLogger(__name__)
 
-def query_lemlist_tool(company_website: Optional[str] = None, title: Optional[List[str]] = None, page: Optional[int] = None, size: Optional[int] = None, tool_context: Optional[ToolContext] = None) -> dict[str, str]:
+def query_lemlist_tool(company_website: Optional[str] = None, title: Optional[List[str]] = None, page: Optional[int] = None, size: Optional[int] = None, tool_context: Optional[ToolContext] = None) -> dict:
     """Queries Lemlist People Database API for contacts using various filters.
 
     This tool uses the Lemlist People Database API to search for contacts using various filters.
@@ -24,8 +24,10 @@ def query_lemlist_tool(company_website: Optional[str] = None, title: Optional[Li
       tool_context: ToolContext object.
 
     Returns:
-      A dict with "status" and optional "error_message" keys.
-      On success, the tool_context.state will be updated with a "lemlist_people" key
+      A dict with "status" key and:
+        - On success: "contacts" (list of contacts found) and "total" (total number of results) keys
+        - On error: "error_message" key
+      The tool_context.state will also be updated with a "lemlist_people" key
       containing the list of contacts found.
     """
     # Get parameters from direct args or tool_context
@@ -162,8 +164,13 @@ def query_lemlist_tool(company_website: Optional[str] = None, title: Optional[Li
         # Store the contacts in the tool context state
         tool_context.state.update({"lemlist_people": contacts})
         
-        # Return success status
-        return {"status": "ok"}
+        # Return success status along with the contacts and total
+        result = {
+            "status": "ok",
+            "contacts": contacts,          # Surface data directly to the agent
+            "total": response_data.get("total", 0)
+        }
+        return result
         
     except requests.exceptions.HTTPError as http_err:
         logger.error("HTTP error querying Lemlist API: %s", http_err)
