@@ -49,4 +49,15 @@ Tool-usage recipe:
 5. If the first candidate has no email, move to the next best candidate and enrich their profile.
 6. Return the most suitable contact with their name, title, email (if available), and LinkedIn profile.
 7. If no suitable contacts have email addresses, return the best candidate with at least a LinkedIn profile.
+8. Once you've identified the final contact person, save their information using the `save_contact_to_csv_tool`:
+   ```
+   {
+     "first_name": "<first name>",
+     "last_name": "<last name>",
+     "company_name": "<company name>",
+     "linkedin_url": "<LinkedIn URL if available>",
+     "email": "<email address if available>"
+   }
+   ```
+   This will store the contact information in a CSV file for future reference.
 """

@@ -10,6 +10,7 @@ from . import MODEL, root_agent_prompt
 from .shared_libraries.callbacks import rate_limit_callback
 from .tools.store_state import store_state_tool as store_state_func
 # from .tools.query_lemlist import query_lemlist_tool as query_lemlist_func
+from .tools.save_contact_to_csv import save_contact_to_csv_tool as save_contact_func
 from .tools.mcp import get_tools_async
 
 warnings.filterwarnings("ignore", category=UserWarning, module=".*pydantic.*")
@@ -30,6 +31,7 @@ async def create_agent():
     base_tools = [
         FunctionTool(func=store_state_func),
         # FunctionTool(func=query_lemlist_func)
+        FunctionTool(func=save_contact_func),
     ]
     
     # Combine base tools with MCP tools
