@@ -30,7 +30,7 @@ Tool-usage recipe:
      "q_organization_domains_list": ["<company domain>"],
      "person_titles": ["Recruiter", "HR", "Talent Acquisition", "People Operations"]
    }
-   ```
+   ```I'm going to go with version 2.1, create the basic outline of the...  Python...  Script, so we can run this.
 3. If the first search yields no results, try searching for sales leaders:
    ```
    {
