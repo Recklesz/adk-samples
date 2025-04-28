@@ -19,7 +19,7 @@ import os
 import vertexai
 from absl import app, flags
 from dotenv import load_dotenv
-from fomc_research.agent import root_agent
+from fomc_research.agent import get_agent
 from vertexai import agent_engines
 from vertexai.preview.reasoning_engines import AdkApp
 
@@ -37,8 +37,11 @@ AGENT_WHL_FILE = "fomc_research-0.1-py3-none-any.whl"
 
 
 def create() -> None:
+    # Get the agent using the get_agent function
+    agent = get_agent()
+    
     adk_app = AdkApp(
-        agent=root_agent,
+        agent=agent,
         enable_tracing=False,
     )
 
