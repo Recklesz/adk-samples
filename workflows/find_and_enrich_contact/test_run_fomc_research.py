@@ -1,5 +1,5 @@
 """
-Script to run the FOMC research agent with a specific company query.
+Test Script to run the FOMC research agent with a specific company query.
 """
 
 import os
