@@ -81,50 +81,65 @@ async def query_agent_for_domain(domain: str) -> Dict[str, Any]:
     ensure_contact_data_dir_exists()
     
     # Get the path to contacts.csv (used by the agent's save_contact_to_csv tool)
-    contact_data_path = get_contacts_csv_path()
-    os.environ['CONTACT_DATA_DIR'] = os.path.dirname(contact_data_path)
+    contact_data_dir = os.path.dirname(get_contacts_csv_path())
     
-    # Create the agent - root_agent is a coroutine that returns (agent, exit_stack)
-    agent, exit_stack = await root_agent
+    # Important: The save_contact_to_csv tool specifically looks for CONTACT_DATA_PATH
+    # This environment variable must match exactly what's expected in the tool
+    os.environ['CONTACT_DATA_PATH'] = contact_data_dir
+    logger.info(f"Set CONTACT_DATA_PATH to: {contact_data_dir}")
     
-    # Save the initial state of contacts.csv (if it exists)
-    initial_contacts = read_contacts_from_csv()
-    logger.info(f"Initial contacts count: {len(initial_contacts)}")
-    
-    # Set up the ADK Runner with services
-    session_service = InMemorySessionService()
-    artifact_service = InMemoryArtifactService()
-    app_name = "fomc_research_runner"
-    
-    runner = Runner(
-        agent=agent, 
-        session_service=session_service, 
-        artifact_service=artifact_service,
-        app_name=app_name
-    )
-    
-    # Generate IDs for this session
-    user_id = f"user_{uuid.uuid4().hex[:8]}"
-    session_id = str(uuid.uuid4())
-    
-    # Create the session
-    session_service.create_session(app_name=app_name, user_id=user_id, session_id=session_id)
-    
-    # Create the query content for the domain
-    logger.info(f"Querying agent for domain: {domain}")
-    user_content = types.Content(role='user', parts=[types.Part(text=domain)])
-    
-    # Run the agent and collect response
-    response_text = ""
+    # We need to properly manage the exit_stack and other resources
     try:
-        async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=user_content):
-            if hasattr(event, 'text') and event.text:
-                response_text += event.text
-            
-        logger.info(f"Agent completed processing for domain: {domain}")
-    except Exception as e:
-        logger.error(f"Error running agent for {domain}: {e}")
-        raise
+        # Create the agent - root_agent is a coroutine that returns (agent, exit_stack)
+        agent, exit_stack = await root_agent
+        
+        # Save the initial state of contacts.csv (if it exists)
+        initial_contacts = read_contacts_from_csv()
+        logger.info(f"Initial contacts count: {len(initial_contacts)}")
+        
+        # Set up the ADK Runner with services
+        session_service = InMemorySessionService()
+        artifact_service = InMemoryArtifactService()
+        app_name = "fomc_research_runner"
+        
+        runner = Runner(
+            agent=agent, 
+            session_service=session_service, 
+            artifact_service=artifact_service,
+            app_name=app_name
+        )
+        
+        # Generate IDs for this session
+        user_id = f"user_{uuid.uuid4().hex[:8]}"
+        session_id = str(uuid.uuid4())
+        
+        # Create the session
+        session_service.create_session(app_name=app_name, user_id=user_id, session_id=session_id)
+        
+        # Create the query content for the domain
+        logger.info(f"Querying agent for domain: {domain}")
+        user_content = types.Content(role='user', parts=[types.Part(text=domain)])
+        
+        # Run the agent and collect response
+        response_text = ""
+        try:
+            async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=user_content):
+                if hasattr(event, 'text') and event.text:
+                    response_text += event.text
+                
+            logger.info(f"Agent completed processing for domain: {domain}")
+        except Exception as e:
+            logger.error(f"Error running agent for {domain}: {e}")
+            raise
+    finally:
+        # Ensure we close the exit_stack to properly clean up resources
+        # This should solve the asyncio error during generator cleanup
+        if 'exit_stack' in locals():
+            try:
+                await exit_stack.aclose()
+                logger.info("Successfully closed agent exit stack")
+            except Exception as e:
+                logger.error(f"Error closing exit stack: {e}")
     
     # Read the final state of contacts.csv to see what the agent added
     final_contacts = read_contacts_from_csv()
