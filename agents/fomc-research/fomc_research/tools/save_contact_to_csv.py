@@ -17,6 +17,7 @@
 import csv
 import logging
 import os
+from pathlib import Path
 from typing import Dict, Any, Optional
 
 from google.adk.tools import ToolContext
@@ -53,8 +54,24 @@ def save_contact_to_csv_tool(
         company_name
     )
     
-    # Create a contacts data folder if it doesn't exist
-    data_folder = "contact_data"
+    # Check if a specific data folder path is set in the environment or tool_context state
+    # This allows the runner script to specify where to save the CSV
+    if hasattr(tool_context, 'state') and 'contact_data_path' in tool_context.state:
+        # Use the path specified in the tool context state
+        data_folder = tool_context.state['contact_data_path']
+        logger.info(f"Using contact_data_path from state: {data_folder}")
+    elif 'CONTACT_DATA_PATH' in os.environ:
+        # Use the path specified in the environment variable
+        data_folder = os.environ['CONTACT_DATA_PATH']
+        logger.info(f"Using CONTACT_DATA_PATH from environment: {data_folder}")
+    else:
+        # Default: Use a path relative to the tool's file location
+        # This ensures consistency regardless of where the script is run from
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        data_folder = os.path.join(os.path.dirname(os.path.dirname(script_dir)), "contact_data")
+        logger.info(f"Using default path: {data_folder}")
+        
+    # Create the directory if it doesn't exist
     os.makedirs(data_folder, exist_ok=True)
     
     # File path for the CSV
@@ -74,7 +91,7 @@ def save_contact_to_csv_tool(
     
     # Write to CSV file
     try:
-        with open(csv_file, mode='a', newline='', encoding='utf-8') as file:
+        with open(str(csv_file), mode='a', newline='', encoding='utf-8') as file:
             fieldnames = ["First Name", "Last Name", "Company Name", "LinkedIn URL", "Email"]
             writer = csv.DictWriter(file, fieldnames=fieldnames)
             

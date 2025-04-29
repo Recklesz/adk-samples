@@ -1,16 +1,3 @@
-# FOMC Research Runner
-
-This script runs the FOMC research agent with a specific query for the company "elevenlabs.io".
-
-## Setup
-
-1. Make sure you have set up the FOMC research agent according to its README in `agents/fomc-research/`.
-2. Install the required dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
 ## Running the Script
 
 ```bash

@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 from contextlib import AsyncExitStack
 from google.adk.sessions import InMemorySessionService
+from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
 from google.adk.runners import Runner
 from google.genai import types
 
@@ -32,9 +33,15 @@ async def main():
         try:
             # --- Set up Runner and Session --- 
             session_service = InMemorySessionService()
+            artifact_service = InMemoryArtifactService()  # Initialize artifact service
             # Define IDs for the run (app_name needed for Runner)
             app_name = "fomc_research_runner"
-            runner = Runner(agent=agent, session_service=session_service, app_name=app_name) # Add app_name here
+            runner = Runner(
+                agent=agent, 
+                session_service=session_service, 
+                artifact_service=artifact_service,  # Pass the artifact service
+                app_name=app_name
+            )
             
             # Define other IDs for the run
             user_id = "test_user_123"
@@ -45,6 +52,13 @@ async def main():
 
             print("Sending company query...")
             response_text = ""
+            # Set contact data path in the environment
+            # This ensures the save_contact_to_csv tool saves to the correct location
+            workflow_dir = Path(__file__).parent
+            contact_data_path = workflow_dir / "contact_data"
+            os.environ["CONTACT_DATA_PATH"] = str(contact_data_path)
+            print(f"Setting contact data path to: {contact_data_path}")
+            
             # Create input content object
             company_query = "elevenlabs.io"
             user_content = types.Content(role='user', parts=[types.Part(text=company_query)])
