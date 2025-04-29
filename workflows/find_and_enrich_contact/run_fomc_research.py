@@ -12,6 +12,8 @@ from google.adk.sessions import InMemorySessionService
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
 from google.adk.runners import Runner
 from google.genai import types
+import logging
+from datetime import datetime
 
 # Add the parent directory of 'fomc_research' package to the Python path
 # Assumes script is run from 'workflows/find_and_enrich_contact'
@@ -24,7 +26,28 @@ from fomc_research.agent import root_agent
 
 async def main():
     """Run the FOMC research agent with a specific query."""
-    print("Starting FOMC research agent with query: elevenlabs.io")
+    
+    # Ensure contact data directory exists and set environment variable early
+    workflow_dir = Path(__file__).parent
+    contact_data_path = workflow_dir / "contact_data"
+    contact_data_path.mkdir(parents=True, exist_ok=True)
+    os.environ["CONTACT_DATA_PATH"] = str(contact_data_path)
+
+    # Configure logging to file and console
+    log_dir = contact_data_path / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file_path = log_dir / f"fomc_research_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[
+            logging.FileHandler(log_file_path),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+    logger = logging.getLogger(__name__)
+
+    logger.info("Starting FOMC research agent with query: elevenlabs.io")
     
     # Get the agent and exit stack
     agent, exit_stack = await root_agent
@@ -50,14 +73,11 @@ async def main():
             # ---> Create the session before using it <--- 
             session_service.create_session(app_name=app_name, user_id=user_id, session_id=session_id)
 
-            print("Sending company query...")
+            logger.info("Sending company query...")
             response_text = ""
             # Set contact data path in the environment
             # This ensures the save_contact_to_csv tool saves to the correct location
-            workflow_dir = Path(__file__).parent
-            contact_data_path = workflow_dir / "contact_data"
-            os.environ["CONTACT_DATA_PATH"] = str(contact_data_path)
-            print(f"Setting contact data path to: {contact_data_path}")
+            logger.info(f"Setting contact data path to: {contact_data_path}")
             
             # Create input content object
             company_query = "elevenlabs.io"
@@ -69,16 +89,16 @@ async def main():
                  # Check for final response event specifically for cleaner output
                  if event.is_final_response() and event.content and event.content.parts:
                     response_text += event.content.parts[0].text
-                 # Optional: handle other event types like tool calls/responses if needed
-                 # elif event.type == ... :
-                 #    print(f"Intermediate Event: {event}")
+                 # Log all events
+                 logger.debug(f"Event received: {event}")
+                 # Optional: handle and log other event types explicitly
+                 # if not event.is_final_response():
+                 #     logger.debug(f"Intermediate Event: {event}")
                      
-            print(f"Agent Response: {response_text}")
+            logger.info(f"Agent Response: {response_text}")
 
         except Exception as e:
-            print(f"An error occurred during agent interaction: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception("An error occurred during agent interaction")
 
 
 if __name__ == "__main__":
