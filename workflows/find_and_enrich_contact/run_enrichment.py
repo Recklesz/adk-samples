@@ -6,6 +6,9 @@ import logging
 import time
 from typing import Dict, Any, List, Set
 
+# Import our agent utilities
+import agent_utils
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -18,29 +21,34 @@ logger = logging.getLogger('enrichment')
 # It should return a dict with new fields to be added per row
 def enrich_company(domain: str) -> Dict[str, Any]:
     """
-    Enriches a company domain by finding contact information.
+    Enriches a company domain by finding contact information using the FOMC research agent.
     
     Args:
         domain: The company domain to enrich
         
     Returns:
-        A dictionary with enriched fields (e.g., contact_name, contact_email)
+        A dictionary with enriched fields from the agent (from the CSV)
     """
-    # Simulate enrichment (replace with actual agent call)
-    # Example: return {'contact_name': 'John Doe', 'contact_email': 'john@' + domain}
-    import time
-    time.sleep(1)  # Simulate work
+    logger.info(f"Querying FOMC research agent for domain: {domain}")
     
-    # This is where you'd call your actual agent
-    # TODO: Replace with real agent call from test_run_fomc_research.py
-    
-    # Return simulated data with more fields to demonstrate dynamic field handling
-    return {
-        'contact_name': f'Contact for {domain}',
-        'contact_email': f'info@{domain}',
-        'contact_title': f'CEO at {domain}',
-        'linkedin_url': f'https://linkedin.com/in/contact-{domain}'
-    }
+    try:
+        # Call the real agent through our utility module's synchronous wrapper
+        # This function properly uses the Runner pattern from test_run_fomc_research.py
+        contact_info = agent_utils.query_domain(domain)
+        
+        logger.info(f"Agent returned contact info for {domain}: {list(contact_info.keys())}")
+        
+        # Make sure the domain is included (though agent_utils should already do this)
+        contact_info['company_domain'] = domain
+        
+        # The contact info should come from the CSV that the agent writes to
+        # and will have fields like First Name, Last Name, Email, LinkedIn URL, etc.
+        return contact_info
+        
+    except Exception as e:
+        logger.error(f"Error querying agent for {domain}: {e}")
+        # Retry logic in main() will handle this
+        raise e
 
 def already_processed_domains(output_csv_path: str) -> Set[str]:
     """

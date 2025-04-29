@@ -1,13 +1,19 @@
 ## Running the Script
 
 ```bash
-poetry run python run_fomc_research.py
+poetry run python test_run_fomc_research.py
 ```
 
 ```bash
 poetry run pytest test_run_enrichment.py
 ```
 
+```bash
+poetry run python test_agent_utils.py elevenlabs.io
+```
+
+
+## OLD flow?
 This will:
 
 1. Initialize the FOMC research agent
