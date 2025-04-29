@@ -27,11 +27,25 @@ from fomc_research.agent import root_agent
 async def main():
     """Run the FOMC research agent with a specific query."""
     
+    # Get domain from command-line argument or use default
+    domain = "elevenlabs.io"  # Default domain
+    if len(sys.argv) > 1:
+        domain = sys.argv[1]
+    
     # Ensure contact data directory exists and set environment variable early
-    workflow_dir = Path(__file__).parent
-    contact_data_path = workflow_dir / "contact_data"
+    # First, check if CONTACT_DATA_PATH is already set (from parent process)
+    contact_data_path = os.environ.get("CONTACT_DATA_PATH")
+    if contact_data_path:
+        contact_data_path = Path(contact_data_path)
+    else:
+        # Use default if not set by parent process
+        workflow_dir = Path(__file__).parent
+        contact_data_path = workflow_dir / "contact_data"
+        os.environ["CONTACT_DATA_PATH"] = str(contact_data_path)
+    
+    # Ensure directory exists
+    contact_data_path = Path(contact_data_path)
     contact_data_path.mkdir(parents=True, exist_ok=True)
-    os.environ["CONTACT_DATA_PATH"] = str(contact_data_path)
 
     # Configure logging to file and console
     log_dir = contact_data_path / "logs"
@@ -47,7 +61,7 @@ async def main():
     )
     logger = logging.getLogger(__name__)
 
-    logger.info("Starting FOMC research agent with query: elevenlabs.io")
+    logger.info(f"Starting FOMC research agent with query: {domain}")
     
     # Get the agent and exit stack
     agent, exit_stack = await root_agent
@@ -79,8 +93,8 @@ async def main():
             # This ensures the save_contact_to_csv tool saves to the correct location
             logger.info(f"Setting contact data path to: {contact_data_path}")
             
-            # Create input content object
-            company_query = "elevenlabs.io"
+            # Create input content object using the domain argument
+            company_query = domain
             user_content = types.Content(role='user', parts=[types.Part(text=company_query)])
 
             # Call runner.run_async with IDs and content
@@ -102,4 +116,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    # Print a startup message
+    print(f"Running FOMC research agent with query: {sys.argv[1] if len(sys.argv) > 1 else 'elevenlabs.io'}")
+    # Run the main function
+    asyncio.run(main())

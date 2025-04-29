@@ -10,26 +10,20 @@ import json
 import csv
 import glob
 from pathlib import Path
-import logging
+from datetime import datetime
 from typing import Dict, Any, List, Optional
+
+# Import our custom logging utilities
+import logging_utils
 
 # Load environment variables
 from dotenv import load_dotenv
 load_dotenv()
 
 # Import FOMC research agent components
-from fomc_research.agent import root_agent  # This is an async coroutine, not a class
-from google.adk.sessions import InMemorySessionService
-from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
-from google.adk.runners import Runner
-from google.genai import types
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger('agent_utils')
+import sys
+import subprocess
+from pathlib import Path
 
 # Determine the contact data directory path
 CONTACT_DATA_DIR = os.environ.get(
@@ -41,7 +35,10 @@ def ensure_contact_data_dir_exists():
     """Ensure the contact data directory exists"""
     if not os.path.exists(CONTACT_DATA_DIR):
         os.makedirs(CONTACT_DATA_DIR)
-        logger.info(f"Created contact data directory: {CONTACT_DATA_DIR}")
+        # We'll use a pipeline logger for utility functions
+        pipeline_logger = logging_utils.get_pipeline_logger("agent_utils")
+        pipeline_logger.info(f"Created contact data directory: {CONTACT_DATA_DIR}")
+    return CONTACT_DATA_DIR
 
 def get_contacts_csv_path():
     """Get the path to the contacts CSV file"""
@@ -66,128 +63,127 @@ def read_contacts_from_csv() -> List[Dict[str, str]]:
     
     return contacts
 
-async def query_agent_for_domain(domain: str) -> Dict[str, Any]:
+def query_domain(domain: str) -> Dict[str, Any]:
     """
-    Query the FOMC research agent for contact information about a company domain.
-    Uses the same pattern as in test_run_fomc_research.py.
+    Query the FOMC research agent for contact information about a domain.
+    
+    This function launches a separate Python process that runs test_run_fomc_research.py
+    with the given domain. This avoids async issues by isolating each agent in its own process.
     
     Args:
         domain: The company domain to research
         
     Returns:
-        A dictionary with contact information extracted from the CSV
+        A dictionary with contact information from the agent
     """
-    # Ensure contact data directory exists
-    ensure_contact_data_dir_exists()
+    # Get a domain-specific logger
+    logger = logging_utils.get_agent_logger(domain)
+    logger.info(f"==== Starting agent processing for domain: {domain} =====")
     
-    # Get the path to contacts.csv (used by the agent's save_contact_to_csv tool)
-    contact_data_dir = os.path.dirname(get_contacts_csv_path())
+    # Ensure the contact data directory exists
+    contact_data_dir = ensure_contact_data_dir_exists()
     
-    # Important: The save_contact_to_csv tool specifically looks for CONTACT_DATA_PATH
-    # This environment variable must match exactly what's expected in the tool
-    os.environ['CONTACT_DATA_PATH'] = contact_data_dir
-    logger.info(f"Set CONTACT_DATA_PATH to: {contact_data_dir}")
+    # Determine the starting state of contacts.csv
+    initial_contacts = read_contacts_from_csv()
+    logger.info(f"Initial contacts in CSV: {len(initial_contacts)}")
     
-    # We need to properly manage the exit_stack and other resources
+    # Get the path to the test script
+    script_dir = Path(__file__).parent
+    test_script = script_dir / "test_run_fomc_research.py"
+    
+    # Set up the command to run the test script with the domain as an argument
+    # We'll use a new process for each domain to avoid async issues
+    cmd = [
+        sys.executable,  # Current Python interpreter
+        str(test_script),
+        domain  # Pass domain as a command-line argument
+    ]
+    
+    # Set up the environment variables
+    env = os.environ.copy()
+    env["CONTACT_DATA_PATH"] = contact_data_dir
+    
+    # Run the command and capture output
+    logger.info(f"Executing: {' '.join(cmd)}")
+    start_time = datetime.now()
+    
     try:
-        # Create the agent - root_agent is a coroutine that returns (agent, exit_stack)
-        agent, exit_stack = await root_agent
-        
-        # Save the initial state of contacts.csv (if it exists)
-        initial_contacts = read_contacts_from_csv()
-        logger.info(f"Initial contacts count: {len(initial_contacts)}")
-        
-        # Set up the ADK Runner with services
-        session_service = InMemorySessionService()
-        artifact_service = InMemoryArtifactService()
-        app_name = "fomc_research_runner"
-        
-        runner = Runner(
-            agent=agent, 
-            session_service=session_service, 
-            artifact_service=artifact_service,
-            app_name=app_name
+        result = subprocess.run(
+            cmd,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120  # 2 minute timeout
         )
         
-        # Generate IDs for this session
-        user_id = f"user_{uuid.uuid4().hex[:8]}"
-        session_id = str(uuid.uuid4())
+        # Process the command output
+        duration = (datetime.now() - start_time).total_seconds()
+        logger.info(f"Command completed in {duration:.2f} seconds")
+        logger.debug(f"Command stdout: {result.stdout[:500]}")
         
-        # Create the session
-        session_service.create_session(app_name=app_name, user_id=user_id, session_id=session_id)
-        
-        # Create the query content for the domain
-        logger.info(f"Querying agent for domain: {domain}")
-        user_content = types.Content(role='user', parts=[types.Part(text=domain)])
-        
-        # Run the agent and collect response
-        response_text = ""
-        try:
-            async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=user_content):
-                if hasattr(event, 'text') and event.text:
-                    response_text += event.text
-                
-            logger.info(f"Agent completed processing for domain: {domain}")
-        except Exception as e:
-            logger.error(f"Error running agent for {domain}: {e}")
-            raise
-    finally:
-        # Ensure we close the exit_stack to properly clean up resources
-        # This should solve the asyncio error during generator cleanup
-        if 'exit_stack' in locals():
-            try:
-                await exit_stack.aclose()
-                logger.info("Successfully closed agent exit stack")
-            except Exception as e:
-                logger.error(f"Error closing exit stack: {e}")
+        if result.returncode != 0:
+            logger.error(f"Command failed with code {result.returncode}")
+            logger.error(f"Error output: {result.stderr}")
+            return {
+                'company_domain': domain,
+                'enrichment_error': f"Agent process failed with code {result.returncode}",
+                'enrichment_note': 'Agent processing failed, see logs for details'
+            }
     
-    # Read the final state of contacts.csv to see what the agent added
+    except subprocess.TimeoutExpired:
+        logger.error(f"Command timed out after 120 seconds")
+        return {
+            'company_domain': domain,
+            'enrichment_error': "Agent process timed out",
+            'enrichment_note': 'Agent processing timed out after 120 seconds'
+        }
+        
+    except Exception as e:
+        logger.error(f"Error running agent for {domain}: {e}", exc_info=True)
+        return {
+            'company_domain': domain,
+            'enrichment_error': str(e),
+            'enrichment_note': 'Agent processing failed, see logs for details'
+        }
+    
+    # Check for new contacts in the CSV
     final_contacts = read_contacts_from_csv()
-    
-    # Find new contacts that weren't there before
     new_contacts = []
+    
     for contact in final_contacts:
         if contact not in initial_contacts:
             new_contacts.append(contact)
     
     logger.info(f"New contacts found: {len(new_contacts)}")
     
-    # If no new contacts were added to CSV but we got a response,
-    # extract what we can from the text response
-    if not new_contacts:
-        logger.warning(f"No contacts added to CSV for {domain}, extracting from response text")
-        # Extract basic info from domain
+    # Process and return the results
+    if new_contacts:
+        # Log the new contacts
+        for i, contact in enumerate(new_contacts):
+            logger.info(f"Contact {i+1}: {contact.get('First Name', '')} {contact.get('Last Name', '')} - {contact.get('Email', '')}")
+        
+        # Format the result (first contact)
+        result = new_contacts[0].copy()
+        result['company_domain'] = domain
+        
+        # Handle multiple contacts
+        if len(new_contacts) > 1:
+            result['additional_contacts_count'] = len(new_contacts) - 1
+            result['enrichment_note'] = f'Found {len(new_contacts)} contacts, returning the first one'
+    else:
+        # No contacts found
+        logger.warning(f"No contacts added to CSV for {domain}")
         result = {
             'company_domain': domain,
-            'response_text': response_text,
-            'enrichment_note': 'Extracted from agent response (no CSV entry)'
+            'enrichment_note': 'No contacts found by the agent'
         }
-        return result
     
-    # Convert the first new contact to our return format
-    # Add additional fields we need
-    result = new_contacts[0]
-    result['company_domain'] = domain
-    
-    # Add any additional contacts as a note
-    if len(new_contacts) > 1:
-        result['additional_contacts_count'] = len(new_contacts) - 1
-        result['enrichment_note'] = f'Found {len(new_contacts)} contacts, returning the first one'
-    
+    logger.info(f"==== Completed agent processing for domain: {domain} =====")
     return result
 
 # Synchronous wrapper for the async function
-def query_domain(domain: str) -> Dict[str, Any]:
-    """
-    Synchronous wrapper for query_agent_for_domain.
-    
-    Args:
-        domain: The company domain to research
-        
-    Returns:
-        A dictionary with contact information
-    """
-    return asyncio.run(query_agent_for_domain(domain))
+# Define variables to be used in the main section
+example_domain = "elevenlabs.io"
 
 if __name__ == "__main__":
     # Example usage
