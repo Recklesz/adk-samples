@@ -23,7 +23,7 @@ from google.genai import types
 current_dir = Path(__file__).parent
 agent_dir = current_dir.parent.parent / 'agents' / 'fomc-research'
 sys.path.insert(0, str(agent_dir))
-from fomc_research.agent import root_agent
+from fomc_research.agent import create_agent
 
 
 def _get_logger(contact_data_path: Path) -> logging.Logger:
@@ -57,7 +57,7 @@ async def _run_fomc_research(domain: str, contact_data_path: Path) -> List[Dict[
     Path(contact_data_path).mkdir(parents=True, exist_ok=True)
 
     try:
-        agent, exit_stack = await root_agent
+        agent, exit_stack = await create_agent()
         async with exit_stack:
             session_service = InMemorySessionService()
             artifact_service = InMemoryArtifactService()
