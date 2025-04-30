@@ -5,12 +5,10 @@ from pathlib import Path
 import sys
 import importlib
 
-# Import the enrichment script as a module
-def import_enrichment_module(tmp_path):
-    sys.path.insert(0, str(tmp_path))
-    module = importlib.import_module("run_enrichment")
-    sys.path.pop(0)
-    return module
+# Ensure the parent directory (where run_enrichment.py lives) is in sys.path
+PARENT_DIR = Path(__file__).resolve().parent.parent
+if str(PARENT_DIR) not in sys.path:
+    sys.path.insert(0, str(PARENT_DIR))
 
 @pytest.fixture
 def sample_input_csv(tmp_path):

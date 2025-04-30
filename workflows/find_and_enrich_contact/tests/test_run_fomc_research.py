@@ -5,6 +5,12 @@ Test Script to run the FOMC research agent with a specific company query using t
 import sys
 import os
 from pathlib import Path
+
+# Ensure the parent directory (where runner.py lives) is in sys.path
+PARENT_DIR = Path(__file__).resolve().parent.parent
+if str(PARENT_DIR) not in sys.path:
+    sys.path.insert(0, str(PARENT_DIR))
+
 import argparse
 import json
 from runner import run_fomc_research
