@@ -8,11 +8,22 @@ from datetime import datetime
 from typing import Dict, Any, List, Set, Tuple
 
 # Import our custom modules
-import agent_utils
+from runner import run_fomc_research
 import logging_utils
+import os
 
 # Configure enrichment pipeline logger
 logger = logging_utils.get_pipeline_logger('enrichment')
+
+# Set up contact data directory (mimic agent_utils logic)
+CONTACT_DATA_DIR = os.environ.get('CONTACT_DATA_PATH') or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'contact_data'
+)
+
+def ensure_contact_data_dir_exists():
+    os.makedirs(CONTACT_DATA_DIR, exist_ok=True)
+    logger.info(f"Ensured contact data directory exists: {CONTACT_DATA_DIR}")
+    return CONTACT_DATA_DIR
 
 # Placeholder for your actual agent enrichment logic
 # Replace this function with your real agent code
@@ -20,55 +31,90 @@ logger = logging_utils.get_pipeline_logger('enrichment')
 def enrich_company(domain: str) -> Dict[str, Any]:
     """
     Enriches a company domain by finding contact information using the FOMC research agent.
-    
     Args:
         domain: The company domain to enrich
-        
     Returns:
         A dictionary with enriched fields from the agent (from the CSV)
     """
+    import json
     start_time = time.time()
     logger.info(f"Starting enrichment for domain: {domain}")
-    
-    # agent_utils.query_domain now handles exceptions internally and returns error info
-    # So we don't need a try/except block here - the function will always return a result
-    contact_info = agent_utils.query_domain(domain)
-    
-    # Log the outcome
-    duration = time.time() - start_time
-    if 'enrichment_error' in contact_info:
-        logger.warning(f"Enrichment failed for {domain} after {duration:.2f}s: {contact_info['enrichment_error']}")
+
+    # Set up isolated run directory for this domain
+    base_dir = ensure_contact_data_dir_exists()
+    sanitized = domain.replace('.', '_').replace('/', '_')
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    run_dir = os.path.join(base_dir, f"{sanitized}_{ts}")
+    os.makedirs(run_dir, exist_ok=True)
+    logger.info(f"Run directory created for domain {domain}: {run_dir}")
+
+    # Run the agent using the in-process runner
+    try:
+        new_contacts = run_fomc_research(domain, run_dir)
+    except Exception as e:
+        logger.error(f"Error running agent for {domain}: {e}", exc_info=True)
+        return {
+            'company_domain': domain,
+            'enrichment_error': str(e),
+            'enrichment_note': 'Agent processing failed, see logs for details'
+        }
+
+    logger.info(f"New contacts found: {len(new_contacts) if new_contacts else 0}")
+    # Process and return the results
+    if new_contacts:
+        # Log the new contacts
+        for i, contact in enumerate(new_contacts):
+            logger.info(f"Contact {i+1}: {contact.get('First Name', '')} {contact.get('Last Name', '')} - {contact.get('Email', '')}")
+        # Format the result (first contact)
+        result = new_contacts[0].copy()
+        result['company_domain'] = domain
+        # Handle multiple contacts
+        if len(new_contacts) > 1:
+            result['additional_contacts_count'] = len(new_contacts) - 1
+            result['enrichment_note'] = f'Found {len(new_contacts)} contacts, returning the first one'
     else:
-        logger.info(f"Successfully enriched {domain} in {duration:.2f}s")
-        logger.info(f"Fields retrieved: {list(contact_info.keys())}")
-    
-    # Make sure domain is always included
-    contact_info['company_domain'] = domain
-    
-    return contact_info
+        # No contacts found
+        logger.warning(f"No contacts added to CSV for {domain}")
+        result = {
+            'company_domain': domain,
+            'enrichment_note': 'No contacts found by the agent'
+        }
+    duration = time.time() - start_time
+    logger.info(f"Completed enrichment for {domain} in {duration:.2f}s")
+    return result
+
 
 def already_processed_domains(output_csv_path: str) -> Set[str]:
     """
-    Get a set of domains that have already been processed.
-    
+    Get a set of domains that have already been processed (i.e., have valid contact data).
+    Domains with 'No contacts found by the agent' or blank contact fields will be retried.
     Args:
         output_csv_path: Path to the output CSV
-        
     Returns:
         Set of domain strings that have already been processed
     """
     if not os.path.exists(output_csv_path):
         logger.info(f"No existing output CSV found at {output_csv_path}")
         return set()
-    
     try:
         df = pd.read_csv(output_csv_path)
-        domains = set(df['Company Domain (website url)'].astype(str))
-        logger.info(f"Found {len(domains)} already processed domains in {output_csv_path}")
-        return domains
+        processed = set()
+        for _, row in df.iterrows():
+            enrichment_note = str(row.get('enrichment_note', '')).strip()
+            first = str(row.get('First Name', '')).strip()
+            last = str(row.get('Last Name', '')).strip()
+            email = str(row.get('Email', '')).strip()
+            # Mark as processed if any contact field is present and not just a 'no contacts' note
+            if (
+                (first or last or email) and enrichment_note != 'No contacts found by the agent'
+            ):
+                processed.add(str(row['Company Domain (website url)']))
+        logger.info(f"Found {len(processed)} successfully processed domains in {output_csv_path}")
+        return processed
     except Exception as e:
         logger.warning(f"Error reading processed domains from {output_csv_path}: {e}", exc_info=True)
         return set()
+
 
 def main(input_csv: str, output_csv: str, concurrency: int = 2) -> None:
     """
