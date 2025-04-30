@@ -186,31 +186,27 @@ def main(input_csv: str, output_csv: str, concurrency: int = 2) -> None:
     
     # Final processing - create a full output file
     if results:
-        # Convert results to DataFrame
-        results_df = pd.DataFrame(results)
-        
-        # Save final, complete results
-        results_df.to_csv(output_csv, index=False)
-        
-        # Collect statistics for reporting
-        all_columns = list(results_df.columns)
-        enrichment_columns = [col for col in all_columns if col not in df.columns]
+        # Convert new results to DataFrame
+        new_df = pd.DataFrame(results)
+        # Merge with existing enriched_df to preserve previous rows
+        merged_df = pd.concat([enriched_df, new_df], ignore_index=True)
+        # Write merged DataFrame to CSV
+        merged_df.to_csv(output_csv, index=False)
         
         # Report completion
-        duration = (datetime.now() - start_time).total_seconds() / 60
-        logger.info(f"=== Enrichment complete ===")
-        logger.info(f"Duration: {duration:.2f} minutes")
-        logger.info(f"Domains processed: {len(results)} of {total_unprocessed}")
+        duration_min = (datetime.now() - start_time).total_seconds() / 60
+        logger.info("=== Enrichment complete ===")
+        logger.info(f"Duration: {duration_min:.2f} minutes")
+        logger.info(f"Domains processed: {len(merged_df) - len(processed_domains)} of {total_unprocessed}")
         logger.info(f"Success: {succeeded}, Failed: {failed}")
-        logger.info(f"Enrichment fields: {', '.join(enrichment_columns)}")
-        
-        print(f"\nEnrichment complete in {duration:.2f} minutes")
+        # Print summary to console
+        print(f"\nEnrichment complete in {duration_min:.2f} minutes")
         print(f"Successfully enriched: {succeeded} domains")
         print(f"Failed: {failed} domains")
         print(f"Output written to: {output_csv}")
     else:
-        logger.warning("No results were produced")
-        print("No results were produced. Check logs for errors.")
+        logger.warning("No new results to merge. CSV remains unchanged.")
+        print("No new domains were enriched. CSV was not modified.")
 
 if __name__ == "__main__":
     import argparse

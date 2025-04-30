@@ -26,23 +26,23 @@ import subprocess
 from pathlib import Path
 
 # Determine the contact data directory path
-CONTACT_DATA_DIR = os.environ.get(
-    'CONTACT_DATA_DIR', 
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'contact_data')
+CONTACT_DATA_DIR = os.environ.get('CONTACT_DATA_PATH') or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), 'contact_data'
 )
 
 def ensure_contact_data_dir_exists():
     """Ensure the contact data directory exists"""
-    if not os.path.exists(CONTACT_DATA_DIR):
-        os.makedirs(CONTACT_DATA_DIR)
-        # We'll use a pipeline logger for utility functions
-        pipeline_logger = logging_utils.get_pipeline_logger("agent_utils")
-        pipeline_logger.info(f"Created contact data directory: {CONTACT_DATA_DIR}")
-    return CONTACT_DATA_DIR
+    # Create the directory specified by CONTACT_DATA_PATH (if set) or default
+    path = os.environ.get('CONTACT_DATA_PATH', CONTACT_DATA_DIR)
+    os.makedirs(path, exist_ok=True)
+    pipeline_logger = logging_utils.get_pipeline_logger("agent_utils")
+    pipeline_logger.info(f"Ensured contact data directory exists: {path}")
+    return path
 
 def get_contacts_csv_path():
     """Get the path to the contacts CSV file"""
-    return os.path.join(CONTACT_DATA_DIR, 'contacts.csv')
+    base_path = os.environ.get('CONTACT_DATA_PATH', CONTACT_DATA_DIR)
+    return os.path.join(base_path, 'contacts.csv')
 
 def read_contacts_from_csv() -> List[Dict[str, str]]:
     """
@@ -80,11 +80,18 @@ def query_domain(domain: str) -> Dict[str, Any]:
     logger = logging_utils.get_agent_logger(domain)
     logger.info(f"==== Starting agent processing for domain: {domain} =====")
     
-    # Ensure the contact data directory exists
-    contact_data_dir = ensure_contact_data_dir_exists()
+    # Set up isolated run directory for this domain
+    base_dir = ensure_contact_data_dir_exists()
+    sanitized = domain.replace('.', '_').replace('/', '_')
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    run_dir = os.path.join(base_dir, f"{sanitized}_{ts}")
+    os.makedirs(run_dir, exist_ok=True)
+    logger.info(f"Run directory created for domain {domain}: {run_dir}")
+    # Prepare contacts file path and initial state (will be empty)
+    contacts_file = os.path.join(run_dir, 'contacts.csv')
+    initial_contacts = []
     
     # Determine the starting state of contacts.csv
-    initial_contacts = read_contacts_from_csv()
     logger.info(f"Initial contacts in CSV: {len(initial_contacts)}")
     
     # Get the path to the test script
@@ -101,7 +108,7 @@ def query_domain(domain: str) -> Dict[str, Any]:
     
     # Set up the environment variables
     env = os.environ.copy()
-    env["CONTACT_DATA_PATH"] = contact_data_dir
+    env["CONTACT_DATA_PATH"] = run_dir
     
     # Run the command and capture output
     logger.info(f"Executing: {' '.join(cmd)}")
@@ -146,14 +153,15 @@ def query_domain(domain: str) -> Dict[str, Any]:
             'enrichment_note': 'Agent processing failed, see logs for details'
         }
     
-    # Check for new contacts in the CSV
-    final_contacts = read_contacts_from_csv()
-    new_contacts = []
-    
-    for contact in final_contacts:
-        if contact not in initial_contacts:
-            new_contacts.append(contact)
-    
+    # Read final contacts from isolated CSV
+    final_contacts = []
+    if os.path.exists(contacts_file):
+        with open(contacts_file, newline='') as csvf:
+            reader = csv.DictReader(csvf)
+            for row in reader:
+                final_contacts.append(dict(row))
+    new_contacts = final_contacts
+     
     logger.info(f"New contacts found: {len(new_contacts)}")
     
     # Process and return the results
