@@ -4,7 +4,7 @@ import secrets
 from pathlib import Path
 from typing import AsyncIterable
 
-from google.adk.agents import AgentContext, BaseAgent, SequentialAgent
+from google.adk.agents import BaseAgent, SequentialAgent
 from google.adk.events import Event, EventActions
 from google.genai import types
 
@@ -177,7 +177,7 @@ class CsvWriterAgent(BaseAgent):
 
 # Define the root agent for the MVP workflow
 root_agent = SequentialAgent(
-    name="mvp_enrichment_workflow",
+    name="enrichment_workflow",
     sub_agents=[
         CsvReaderAgent(name="csv_reader"),
         SimpleEnricherAgent(name="simple_enricher"),
